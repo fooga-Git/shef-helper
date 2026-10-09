@@ -3,3 +3,4 @@ sqlalchemy[asyncio]
 aiosqlite
 alembic
 python-dotenv
+andro-cfw

@@ -1,0 +1,5 @@
+aiogram==3.*
+sqlalchemy[asyncio]
+aiosqlite
+alembic
+python-dotenv

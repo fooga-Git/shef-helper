@@ -1,12 +1,15 @@
 import asyncio
 import logging
 import ssl
+from bot.db.base import Base, engine
+from bot.db import models  # noqa: F401
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.telegram import TelegramAPIServer
 from aiogram.enums import ParseMode
+from aiogram.types import BotCommand
 
 from raito import Raito
 from andro_cfw import CFWSession
@@ -21,8 +24,6 @@ async def main() -> None:
     api_server = TelegramAPIServer(**cfw.aiogram_server_url())
 
     session = AiohttpSession(api=api_server)
-
-    # Засовываем SSL-контекст внутрь коннектора aiohttp
     ssl_ctx = ssl.create_default_context()
     ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     session._connector_init["ssl"] = ssl_ctx
@@ -34,9 +35,17 @@ async def main() -> None:
     )
     dp = Dispatcher()
 
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    await bot.set_my_commands([
+        BotCommand(command="start", description="Начать"),
+        BotCommand(command="clear", description="Очистить чат"),
+    ])
+
     raito = Raito(
         dp,
-        "/home/house/shef-helper/shef-helper/bot/handlers",
+        "bot/handlers",
         production=False,
     )
     await raito.setup()

@@ -34,6 +34,9 @@ async def main() -> None:
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     dp = Dispatcher()
+    from bot.middlewares.auth import AuthMiddleware
+    dp.message.middleware(AuthMiddleware())
+    dp.callback_query.middleware(AuthMiddleware())
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

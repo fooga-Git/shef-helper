@@ -83,3 +83,29 @@ def entry_label(entry: SalaryEntry, user=None) -> str:
     if entry.entry_type == "advance":
         return f"💵 {amount:.0f} ₽ (за {MONTHS_RU[entry.month].lower()})"
     return f"{amount:.0f} ₽"
+
+
+async def handle_date_input(text: str, tg_id: int) -> tuple[date | None, str | None]:
+    """Парсит и валидирует дату. Возвращает (date, error)."""
+    d = parse_date(text)
+    if not d:
+        return None, "Неверный формат. Пример: <code>05.10</code>"
+
+    err = await validate_date(tg_id, d)
+    if err:
+        return None, err
+
+    return d, None
+
+
+async def handle_date_input(text: str, tg_id: int) -> tuple[date | None, str | None]:
+    """Парсит и валидирует дату. Возвращает (date, error_message)."""
+    d = parse_date(text)
+    if not d:
+        return None, "Неверный формат. Пример: <code>05.10</code>"
+
+    err = await validate_date(tg_id, d)
+    if err:
+        return None, err
+
+    return d, None

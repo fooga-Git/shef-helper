@@ -25,10 +25,6 @@ def date_kb(action: str) -> InlineKeyboardMarkup:
     ])
 
 
-def back_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="sal_back")],
-    ])
 
 
 def month_picker_kb(months: list[tuple[int, int]], action_prefix: str) -> InlineKeyboardMarkup:

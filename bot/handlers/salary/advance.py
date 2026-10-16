@@ -9,7 +9,7 @@ from sqlalchemy import select
 from bot.db.base import async_session
 from bot.db.models import User, SalaryEntry, SalaryReport
 from bot.keyboards.salary import month_picker_kb, date_kb
-from bot.services.salary import get_open_months, MONTHS_RU, parse_date, validate_date
+from bot.services.salary import get_open_months, MONTHS_RU, handle_date_input
 from bot.services.salary_states import SalaryFlow
 
 router = Router(name="sal_advance")
@@ -98,12 +98,7 @@ async def date_other(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(SalaryFlow.advance_date)
 async def date_input(message: Message, state: FSMContext) -> None:
-    d = await parse_date(message.text)
-    if not d:
-        await message.answer("Неверный формат. Пример: <code>05.10</code>")
-        return
-
-    err = await validate_date(message.from_user.id, d)
+    d, err = await handle_date_input(message.text, message.from_user.id)
     if err:
         await message.answer(err)
         return

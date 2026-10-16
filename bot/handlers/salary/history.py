@@ -7,7 +7,7 @@ from sqlalchemy import select
 
 from bot.db.base import async_session
 from bot.db.models import User, SalaryEntry
-from bot.keyboards.salary import back_kb
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.services.salary import MONTHS_RU, unit_for
 
 router = Router(name="sal_history")
@@ -84,5 +84,5 @@ async def show_history(callback: CallbackQuery) -> None:
 
             lines.append(f"{emoji} {day:02d}.{month:02d} — {', '.join(parts)}")
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=back_kb())
+    await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="sal_back")]]))
     await callback.answer()

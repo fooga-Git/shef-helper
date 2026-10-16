@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from bot.db.base import async_session
 from bot.db.models import User, SalaryEntry, SalaryReport
-from bot.keyboards.salary import back_kb
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from bot.services.salary import MONTHS_RU, unit_for
 
 router = Router(name="sal_total")
@@ -82,5 +82,5 @@ async def show_total(callback: CallbackQuery) -> None:
         await callback.answer("Пока пусто.", show_alert=True)
         return
 
-    await callback.message.edit_text("\n".join(lines), reply_markup=back_kb())
+    await callback.message.edit_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data="sal_back")]]))
     await callback.answer()

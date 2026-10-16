@@ -9,9 +9,10 @@ from sqlalchemy import select
 from bot.db.base import async_session
 from bot.db.models import User, SalaryEntry
 from bot.keyboards.salary import date_kb
-from bot.services.salary import parse_date, validate_date, unit_for
+from bot.services.salary import handle_date_input, unit_for
 from bot.services.salary_actions import ACTIONS, ACCRUAL
 from bot.services.salary_states import SalaryFlow
+
 
 logger = logging.getLogger(__name__)
 router = Router(name="sal_actions")
@@ -68,12 +69,7 @@ async def date_other(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(SalaryFlow.action_date)
 async def date_input(message: Message, state: FSMContext) -> None:
-    d = await parse_date(message.text)
-    if not d:
-        await message.answer("Неверный формат. Пример: <code>05.10</code>")
-        return
-
-    err = await validate_date(message.from_user.id, d)
+    d, err = await handle_date_input(message.text, message.from_user.id)
     if err:
         await message.answer(err)
         return
@@ -155,4 +151,4 @@ async def value_input(message: Message, state: FSMContext) -> None:
     if action.is_accrual:
         await message.answer(f"✅ Начислено за {target_date.strftime('%d.%m')}: {action.sign * amount:.0f} ₽ ({value:g} {unit})")
     else:
-        await message.answer(f"✅ {action.label} за {target_date.strftime('%d.%m')}: {action.sign * amount:.0f} ₽")
+        await message.answer(f"✅ {action_name} за {target_date.strftime('%d.%m')}: {action.sign * amount:.0f} ₽")

@@ -29,13 +29,14 @@ class SalaryFlow(StatesGroup):
     waiting_penalty_date = State()
     waiting_advance_sum = State()
     waiting_salary_sum = State()
+    waiting_undo_date = State()
 
 
 def main_kb(user: User) -> InlineKeyboardMarkup:
     rate_text = f"{float(user.rate_amount):.0f} ₽/{'час' if user.rate_type == 'hour' else 'день'}"
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Начислить", callback_data="sal_accrual"),
-         InlineKeyboardButton(text="➖ Отменить последнее", callback_data="sal_undo")],
+         InlineKeyboardButton(text="➖ Отменить", callback_data="sal_undo")],
         [InlineKeyboardButton(text="⚠️ Штраф", callback_data="sal_penalty"),
          InlineKeyboardButton(text="💵 Получил", callback_data="sal_advance")],
         [InlineKeyboardButton(text="📊 Итог", callback_data="sal_total"),
@@ -44,27 +45,7 @@ def main_kb(user: User) -> InlineKeyboardMarkup:
     ])
 
 
-@router.message(Command("cancel"))
-async def cmd_cancel(message: Message, state: FSMContext) -> None:
-    current_state = await state.get_state()
-    if current_state is None:
-        await message.answer("Нечего отменять.")
-        return
-
-    await state.clear()
-
-    async with async_session() as session:
-        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
-        user = result.scalar_one_or_none()
-
-    if user:
-        await message.answer("❌ Отменено.", reply_markup=main_kb(user))
-    else:
-        await message.answer("❌ Отменено.")
-
-
 def date_kb(action: str) -> InlineKeyboardMarkup:
-    """action = 'accrual' или 'penalty'"""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📅 Сегодня", callback_data=f"{action}_today")],
         [InlineKeyboardButton(text="📆 Другая дата", callback_data=f"{action}_other")],
@@ -73,7 +54,6 @@ def date_kb(action: str) -> InlineKeyboardMarkup:
 
 
 async def parse_date(text: str) -> date | None:
-    """Парсит ДД.ММ или ДД.ММ.ГГГГ. Возвращает date или None."""
     text = text.strip()
     parts = text.replace("/", ".").replace("-", ".").split(".")
     try:
@@ -99,6 +79,25 @@ async def is_month_closed(tg_id: int, year: int, month: int) -> bool:
             )
         )
         return result.scalar_one_or_none() is not None
+
+
+@router.message(Command("cancel"))
+async def cmd_cancel(message: Message, state: FSMContext) -> None:
+    current_state = await state.get_state()
+    if current_state is None:
+        await message.answer("Нечего отменять.")
+        return
+
+    await state.clear()
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        user = result.scalar_one_or_none()
+
+    if user:
+        await message.answer("❌ Отменено.", reply_markup=main_kb(user))
+    else:
+        await message.answer("❌ Отменено.")
 
 
 @router.message(F.text == "💰 ЗП")
@@ -193,7 +192,6 @@ async def ask_accrual(callback: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(F.data == "accrual_today")
 async def accrual_today(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(target_date=date.today().isoformat())
-    data = await state.get_data()
     await callback.message.edit_text("Введи значение:")
     await state.set_state(SalaryFlow.waiting_accrual)
     await callback.answer()
@@ -225,7 +223,6 @@ async def accrual_date_input(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(target_date=d.isoformat())
-    await state.update_data(target_date=d.isoformat())
     await message.answer("Введи значение:")
     await state.set_state(SalaryFlow.waiting_accrual)
 
@@ -244,11 +241,7 @@ async def save_accrual(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     target_date_str = data.get("target_date")
-
-    if target_date_str:
-        target_date = date.fromisoformat(target_date_str)
-    else:
-        target_date = date.today()
+    target_date = date.fromisoformat(target_date_str) if target_date_str else date.today()
 
     async with async_session() as session:
         result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
@@ -289,41 +282,162 @@ async def save_accrual(message: Message, state: FSMContext) -> None:
     await message.answer(f"✅ Начислено за {target_date.strftime('%d.%m')}: {amount:.0f} ₽ ({value:g} {unit})")
 
 
-# ---------- Отмена последнего ----------
+# ---------- Отмена записи ----------
 
 @router.callback_query(F.data == "sal_undo")
-async def undo_last(callback: CallbackQuery) -> None:
-    now = datetime.now()
+async def undo_menu(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "Выбери дату записи, которую отменить:",
+        reply_markup=date_kb("undo"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "undo_today")
+async def undo_today(callback: CallbackQuery) -> None:
+    d = date.today()
+    await show_undo_list(callback, d)
+
+
+@router.callback_query(F.data == "undo_other")
+async def undo_other(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text(
+        "📆 Введи дату в формате <code>ДД.ММ</code> или <code>ДД.ММ.ГГГГ</code>:"
+    )
+    await state.set_state(SalaryFlow.waiting_undo_date)
+    await callback.answer()
+
+
+@router.message(SalaryFlow.waiting_undo_date)
+async def undo_date_input(message: Message, state: FSMContext) -> None:
+    d = await parse_date(message.text)
+    if not d:
+        await message.answer("Неверный формат. Пример: <code>05.10</code>")
+        return
+
+    await state.clear()
 
     async with async_session() as session:
         result = await session.execute(
-            select(SalaryEntry)
-            .where(
-                SalaryEntry.telegram_id == callback.from_user.id,
-                SalaryEntry.year == now.year,
-                SalaryEntry.month == now.month,
+            select(SalaryEntry).where(
+                SalaryEntry.telegram_id == message.from_user.id,
+                SalaryEntry.entry_date == d,
             )
-            .order_by(SalaryEntry.id.desc())
-            .limit(1)
         )
+        entries = result.scalars().all()
+
+    if not entries:
+        await message.answer(f"Нет записей за {d.strftime('%d.%m')}.")
+        return
+
+    buttons = []
+    for e in entries:
+        amount = float(e.amount)
+        value = float(e.value)
+
+        if e.entry_type == "accrual":
+            label = f"➕ +{amount:.0f} ₽ ({value:g})"
+        elif e.entry_type == "penalty":
+            label = f"⚠️ {amount:.0f} ₽"
+        elif e.entry_type == "advance":
+            label = f"💵 {amount:.0f} ₽ (за {MONTHS_RU[e.month].lower()})"
+        else:
+            label = f"{amount:.0f} ₽"
+
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"undo_entry_{e.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="sal_back")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await message.answer(f"📅 {d.strftime('%d.%m.%Y')}\n\nВыбери запись для отмены:", reply_markup=kb)
+
+
+async def show_undo_list(callback: CallbackQuery, d: date) -> None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(SalaryEntry).where(
+                SalaryEntry.telegram_id == callback.from_user.id,
+                SalaryEntry.entry_date == d,
+            )
+        )
+        entries = result.scalars().all()
+
+    if not entries:
+        await callback.answer(f"Нет записей за {d.strftime('%d.%m')}.", show_alert=True)
+        return
+
+    buttons = []
+    for e in entries:
+        amount = float(e.amount)
+        value = float(e.value)
+
+        if e.entry_type == "accrual":
+            label = f"➕ +{amount:.0f} ₽ ({value:g})"
+        elif e.entry_type == "penalty":
+            label = f"⚠️ {amount:.0f} ₽"
+        elif e.entry_type == "advance":
+            label = f"💵 {amount:.0f} ₽ (за {MONTHS_RU[e.month].lower()})"
+        else:
+            label = f"{amount:.0f} ₽"
+
+        buttons.append([InlineKeyboardButton(text=label, callback_data=f"undo_entry_{e.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="sal_back")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await callback.message.edit_text(
+        f"📅 {d.strftime('%d.%m.%Y')}\n\nВыбери запись для отмены:",
+        reply_markup=kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("undo_entry_"))
+async def undo_confirm(callback: CallbackQuery) -> None:
+    entry_id = int(callback.data.split("_", 2)[2])
+
+    async with async_session() as session:
+        result = await session.execute(select(SalaryEntry).where(SalaryEntry.id == entry_id))
+        entry = result.scalar_one_or_none()
+
+    if not entry:
+        await callback.answer("Запись не найдена.", show_alert=True)
+        return
+
+    amount = float(entry.amount)
+    d = entry.entry_date
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"undo_do_{entry_id}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="sal_back")],
+    ])
+    await callback.message.edit_text(
+        f"Удалить запись?\n\n📅 {d.strftime('%d.%m.%Y')}\n💰 {amount:.0f} ₽",
+        reply_markup=kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("undo_do_"))
+async def undo_do(callback: CallbackQuery) -> None:
+    entry_id = int(callback.data.split("_", 2)[2])
+
+    async with async_session() as session:
+        result = await session.execute(select(SalaryEntry).where(SalaryEntry.id == entry_id))
         entry = result.scalar_one_or_none()
 
         if not entry:
-            await callback.answer("Нечего отменять.", show_alert=True)
+            await callback.answer("Запись не найдена.", show_alert=True)
             return
 
-        amount = float(entry.amount)
-        value = float(entry.value)
-        entry_type = entry.entry_type
-
+        d = entry.entry_date
         await session.delete(entry)
         await session.commit()
 
-    type_names = {"accrual": "начисление", "penalty": "штраф", "advance": "аванс"}
-    await callback.answer(
-        f"✅ Отменено {type_names.get(entry_type, entry_type)}: {amount:.0f} ₽ ({value:g})",
-        show_alert=True,
-    )
+    await callback.answer("✅ Удалено.", show_alert=True)
+
+    # возврат к списку за ту же дату
+    await show_undo_list(callback, d)
 
 
 # ---------- Штраф ----------

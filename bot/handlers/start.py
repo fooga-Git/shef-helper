@@ -17,6 +17,7 @@ async def set_chef_commands(bot, chat_id: int) -> None:
         commands=[
             BotCommand(command="start", description="Начать"),
             BotCommand(command="clear", description="Очистить чат"),
+            BotCommand(command="cancel", description="Отменить действие"),
         ],
         scope=BotCommandScopeChat(chat_id=chat_id),
     )
@@ -57,9 +58,8 @@ async def cmd_start_deep_link(message: Message, command: CommandObject) -> None:
         await session.commit()
 
     await message.answer(
-        f"✅ Добро пожаловать, {invite.full_name}!\n"
-        f"Станция: {invite.station}\n"
-        f"Роль: {invite.role}",
+        f"✅ {invite.full_name} принят на должность!\n\n"
+        f"Цех: {invite.station or '—'}",
         reply_markup=main_menu(invite.role),
     )
 
@@ -122,3 +122,20 @@ async def cmd_clear(message: Message) -> None:
                 return False
 
     await asyncio.gather(*(try_delete(i) for i in ids))
+
+    async with async_session() as session:
+        result = await session.execute(select(User).where(User.telegram_id == message.from_user.id))
+        user = result.scalar_one_or_none()
+
+    if user:
+        await bot.send_message(
+            chat_id=chat_id,
+            text="🧹 Чат очищен.",
+            reply_markup=main_menu(user.role),
+        )
+
+
+@router.message(Command("refresh"))
+async def cmd_refresh(message: Message) -> None:
+    await set_chef_commands(message.bot, message.from_user.id)
+    await message.answer("✅ Команды обновлены.")

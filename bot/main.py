@@ -44,6 +44,7 @@ async def main() -> None:
     await bot.set_my_commands([
         BotCommand(command="start", description="Начать"),
         BotCommand(command="clear", description="Очистить чат"),
+        BotCommand(command="cancel", description="Отменить действие"),
     ])
 
     raito = Raito(

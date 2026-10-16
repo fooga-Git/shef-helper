@@ -2,7 +2,10 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 def main_menu(role: str) -> ReplyKeyboardMarkup:
-    buttons = []
+    buttons = [
+        [KeyboardButton(text="📅 График")],
+        [KeyboardButton(text="💰 ЗП")],
+    ]
     if role == "chef":
         buttons.append([KeyboardButton(text="👔 Администрация команды")])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
